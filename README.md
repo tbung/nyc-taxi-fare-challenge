@@ -2,6 +2,12 @@
 
 ## Comparison
 
-- Gaussian Process
+- Gaussian Process Regression
+- Deep Gaussian Process
 - Neural Network
-- Linear Regression?
+- Linear Regression
+
+## Requirements
+
+- [GPFlow](https://github.com/GPflow/GPflow)
+- [PyTorch](https://pytorch.org)

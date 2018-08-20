@@ -24,10 +24,22 @@ def get_data_loaders(batch_size):
     return train_loader, val_loader
 
 
+def eval(model, val_loader):
+    mse = 0
+    for x, y, t in range(val_loader):
+        z = model(x, y)
+        mse += (t - z)**2
+
+    return torch.sqrt(mse/len(val_loader))
+
+
 def main(config):
     viz = Visdom(port=8098)
 
-    loss_plot = viz.line(X=np.array([0]), Y=np.array([np.nan]))
+    loss_plot = viz.line(X=np.array([0]), Y=np.array([np.nan]),
+                         opts=dict(xlabel='Batch', ylabel='MSE Loss'))
+    acc_plot = viz.line(X=np.array([0]), Y=np.array([np.nan]),
+                        opts=dict(xlabel='Batch', ylabel='Val Acc'))
 
     run_id = str(int(time.time()))[-7:]
     device = 'cuda'
@@ -42,7 +54,7 @@ def main(config):
 
     i = 0
     for epoch in range(config.n_epochs):
-        for x, y, t in tqdm(train_loader):
+        for i, (x, y, t) in enumerate(tqdm(train_loader)):
             x, y, t = x.to(device), y.to(device), t.to(device)
 
             z = model(x, y)
@@ -55,15 +67,14 @@ def main(config):
             viz.line(X=np.array([i]), Y=np.array([loss.data.item()]), update='append',
                      win=loss_plot)
 
-            i += 1
-            if i == 20:
-                break
+            if i % 20 == 0:
+                model.cpu()
+                torch.save(model, f'out/model_{epoch:03d}_{run_id}.pt')
+                model.to(device)
+                acc = eval(val_loader)
+                viz.line(X=np.array([i]), Y=np.array([acc.data.item()]), update='append',
+                         win=acc_plot)
 
-        if epoch % 20 == 0:
-            model.cpu()
-            torch.save(model, f'out/model_{epoch:03d}_{run_id}.pt')
-
-        break
 
 
 if __name__ == '__main__':

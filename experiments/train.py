@@ -71,7 +71,7 @@ def main(config):
                 model.cpu()
                 torch.save(model, f'out/model_{epoch:03d}_{run_id}.pt')
                 model.to(device)
-                acc = eval(val_loader)
+                acc = eval(model, val_loader)
                 viz.line(X=np.array([i]), Y=np.array([acc.data.item()]), update='append',
                          win=acc_plot)
 

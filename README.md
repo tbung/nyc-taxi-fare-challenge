@@ -1,4 +1,4 @@
-# New York City Taxi Fare Prediction Challenge
+# [New York City Taxi Fare Prediction Challenge](https://www.kaggle.com/c/new-york-city-taxi-fare-prediction)
 
 ## Comparison
 
@@ -9,5 +9,5 @@
 
 ## Requirements
 
-- [GPFlow](https://github.com/GPflow/GPflow)
+- [GPyTorch](https://cornellius-gp.github.io/)
 - [PyTorch](https://pytorch.org)

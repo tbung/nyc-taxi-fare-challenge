@@ -50,7 +50,15 @@ class NYCTaxiFareDataset(data.Dataset):
                 self.target[index])
 
     def __len__(self):
-        return self.target.shape[0]
+        return self.target.size(0)
+
+    def cuda(self):
+        print("Loading data onto GPU")
+        self.gps = self.gps.cuda()
+        self.categorical = self.categorical.cuda()
+        self.target = self.target.cuda()
+
+        return self
 
     def preprocess(self):
         print("Preprocessing data")

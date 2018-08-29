@@ -1,9 +1,12 @@
 import torch
 import torch.nn.functional as F
+import gpytorch
 
 import numpy as np
+from tqdm import tqdm
 
 from networks import NYCTaxiFareModel
+from gp import DKLModel
 
 
 class BaseModel:
@@ -26,7 +29,7 @@ class BaseModel:
     def eval(self, val_loader):
         self.model.eval()
         mse = 0
-        for x, y, t in range(val_loader):
+        for x, y, t in tqdm(val_loader):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
             t = t.to(self.device, non_blocking=True)
@@ -65,11 +68,36 @@ class NetworkModel(BaseModel):
 
 
 class SVDKGPModel(BaseModel):
-    def __init__(self):
-        pass
+    def __init__(self, config, N=None):
+        self.model = DKLModel().to(self.device)
+        self.likelihood = gpytorch.likelihoods.GaussianLikelihood().to(
+            self.device)
 
-    def process_batch(self, x, y):
-        pass
+        self.optimizer = torch.optim.SGD([
+            {'params': self.model.parameters()},
+            {'params': self.likelihood.parameters()},
+        ], lr=0.1)
+
+        self.mll = gpytorch.mlls.VariationalMarginalLogLikelihood(
+            self.likelihood, self.model, n_data=N
+        )
+
+    def process_batch(self, x, y, t):
+        self.optimizer.zero_grad()
+
+        # Because the grid is relatively small, we turn off the Toeplitz matrix
+        # multiplication and just perform them directly
+        # We find this to be more efficient when the grid is very small.
+        with (gpytorch.settings.use_toeplitz(False),
+              gpytorch.beta_features.diagonal_correction()):
+            z = self.model(x, y)
+            loss = -self.mll(z, t)
+
+        # The actual optimization step
+        loss.backward()
+        self.optimizer.step()
+
+        return loss.item()
 
 
 __models = {

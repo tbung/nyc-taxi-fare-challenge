@@ -1,15 +1,13 @@
 import time
+import argparse
+import numpy as np
 
-import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
-
+from visdom import Visdom
 from tqdm import tqdm
 
+import models
 from data import NYCTaxiFareDataset
-from nn import NYCTaxiFareModel
-from visdom import Visdom
-import numpy as np
 
 
 def get_data_loaders(batch_size):
@@ -27,19 +25,7 @@ def get_data_loaders(batch_size):
     return train_loader, val_loader
 
 
-@torch.no_grad()
-def eval(model, val_loader):
-    model.eval()
-    mse = 0
-    for x, y, t in tqdm(val_loader, desc='Val'):
-        x, y, t = x.cuda(async=True), y.cuda(async=True), t.cuda(async=True)
-        z = model(x, y)
-        mse += torch.sum((t - z)**2).data.item()
-
-    return np.sqrt(mse/len(val_loader))
-
-
-def main(config):
+def main(args):
     viz = Visdom(port=8098)
 
     loss_plot = viz.line(X=np.array([0]), Y=np.array([np.nan]),
@@ -50,46 +36,50 @@ def main(config):
     run_id = str(int(time.time()))[-7:]
     device = 'cuda'
 
-    model = NYCTaxiFareModel(54, 500, 1)
-    model.train()
-    model.to(device)
+    model = models.get_model(args.model)(vars(args))
+    config = model.get_config()
 
-    train_loader, val_loader = get_data_loaders(config.batch_size)
+    train_loader, val_loader = get_data_loaders(config['batch-size'])
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=config.lr,
-                                momentum=0.9, weight_decay=1e-4)
     n_eval = 5*len(train_loader)//100
 
-    i = 0
-    for epoch in range(config.n_epochs):
+    for epoch in range(config['n-epochs']):
         for i, (x, y, t) in enumerate(tqdm(train_loader)):
-            x, y, t = x.cuda(async=True), y.cuda(async=True), t.cuda(async=True)
+            x = x.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
+            t = t.to(device, non_blocking=True)
 
-            z = model(x, y)
+            loss = model.process_batch(x, y, t)
 
-            optimizer.zero_grad()
-            loss = F.mse_loss(z, t)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.2)
-            optimizer.step()
-
-            viz.line(X=np.array([i]), Y=np.array([loss.data.item()]), update='append',
-                     win=loss_plot)
+            viz.line(
+                X=np.array([i]),
+                Y=np.array([loss]),
+                update='append',
+                win=loss_plot
+            )
 
             if (i+1) % n_eval == 0:
-                model.cpu()
-                torch.save(model, f'out/model_{epoch:03d}_{run_id}.pt')
-                model.to(device)
-                acc = eval(model, val_loader)
+                model.save(epoch, run_id)
+                acc = model.eval(val_loader)
                 viz.line(X=np.array([i]), Y=np.array([acc]), update='append',
                          win=acc_plot)
 
 
-
 if __name__ == '__main__':
-    class config:
-        batch_size = 2**9
-        lr = 0.01
-        n_epochs = 10
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', choices=models.list_models(),
+                        help='Model to use for training')
+    parser.add_argument('--n-epochs', type=int, default=argparse.SUPPRESS,
+                        help='')
+    parser.add_argument('--save-interval', type=int, default=argparse.SUPPRESS,
+                        help='')
+    parser.add_argument('--val-interval', type=int, default=argparse.SUPPRESS,
+                        help='')
+    parser.add_argument('--batch-size', type=int, default=argparse.SUPPRESS,
+                        help='')
+    parser.add_argument('--lr', type=int, default=argparse.SUPPRESS,
+                        help='')
 
-    main(config)
+    args = parser.parse_args()
+
+    main(args)

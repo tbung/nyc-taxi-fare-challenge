@@ -16,33 +16,39 @@ class NYCTaxiFareDataset(data.Dataset):
     target_file = 'tgt.pt'
 
     mean = np.array([-73.97082, 40.750137, -73.97059, 40.750237])
-    std = np.array([0.039113935, 0.030007664, 0.03834897, 0.033217724])
+    std = np.array([0.039113935, 0.030007664, 0.03834897,
+                    0.033217724])
     min_year = 2009
 
-    def __init__(self, root, train=True):
+    def __init__(self, root, size=-1, train=True):
         self.root = Path(root)
         self.train = train
-        self.testsplit = 0.05
+        self.testsplit = 0.1
 
         if (not (self.root / self.train_folder).exists()
                 or not (self.root / self.test_folder).exists()
                 or not (self.root / self.eval_folder).exists()):
             self.preprocess()
 
+        self.target = torch.load(self.root / self.train_folder /
+                                 self.target_file)[:size]
+        self.gps = torch.load(self.root / self.train_folder /
+                              self.gps_file)[:size]
+        self.categorical = torch.load(self.root / self.train_folder /
+                                      self.cat_file)[:size]
+
         if self.train:
-            self.target = torch.load(self.root / self.train_folder /
-                                     self.target_file)
-            self.gps = torch.load(self.root / self.train_folder /
-                                  self.gps_file)
-            self.categorical = torch.load(self.root / self.train_folder /
-                                          self.cat_file)
+            self.target = self.target[:int(-self.testsplit *
+                                           self.target.shape[0])]
+            self.gps = self.gps[:int(-self.testsplit * self.gps.shape[0])]
+            self.categorical = self.categorical[:int(-self.testsplit *
+                                                     self.categorical.shape[0])]
         else:
-            self.target = torch.load(self.root / self.test_folder /
-                                     self.target_file)
-            self.gps = torch.load(self.root / self.test_folder /
-                                  self.gps_file)
-            self.categorical = torch.load(self.root / self.test_folder /
-                                          self.cat_file)
+            self.target = self.target[int(-self.testsplit *
+                                          self.target.shape[0]):]
+            self.gps = self.gps[int(-self.testsplit * self.gps.shape[0]):]
+            self.categorical = self.categorical[int(-self.testsplit *
+                                                self.categorical.shape[0]):]
 
     def __getitem__(self, index):
         return (self.gps[index],
@@ -73,7 +79,8 @@ class NYCTaxiFareDataset(data.Dataset):
         data = data.dropna(how='any', axis='rows')
 
         # Filter negative fare amount
-        data = data[data['fare_amount'] >= 0]
+        data = data[data['fare_amount'] > 0]
+        data = data[data['fare_amount'] < 250]
 
         # Filter passenger count
         data = data[(data['passenger_count'] <= 6) &

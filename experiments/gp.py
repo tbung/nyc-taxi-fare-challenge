@@ -14,7 +14,7 @@ class NYCTaxiFareDeepKernel(nn.Module):
         super(NYCTaxiFareDeepKernel, self).__init__()
         self.feature_creator = NYCTaxiFareFeatureCreator()
 
-        self.layers = [
+        self.layers = nn.ModuleList([
             nn.Linear(dims[0], dims[1]),
             nn.ReLU(),
             nn.Linear(dims[1], dims[2]),
@@ -22,10 +22,11 @@ class NYCTaxiFareDeepKernel(nn.Module):
             nn.Linear(dims[2], dims[3]),
             nn.ReLU(),
             nn.Linear(dims[3], dims[4]),
-        ]
+        ])
 
     def forward(self, x, y):
-        out = self.feature_creator(x, y)
+        # out = self.feature_creator(x, y)
+        out = torch.cat([x, y.float()], dim=1)
         for layer in self.layers:
             out = layer(out)
 
@@ -49,7 +50,7 @@ class GPRegressionLayer(gpytorch.models.GridInducingVariationalGP):
 class DKLModel(gpytorch.Module):
     def __init__(self, grid_bounds=(-1., 1.)):
         super(DKLModel, self).__init__()
-        self.feature_extractor = NYCTaxiFareDeepKernel([54, 1000, 500, 50, 2])
+        self.feature_extractor = NYCTaxiFareDeepKernel([9, 1000, 500, 50, 2])
         self.gp_layer = GPRegressionLayer()
         self.grid_bounds = grid_bounds
 

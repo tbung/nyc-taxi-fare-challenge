@@ -93,14 +93,9 @@ class SVDKGPModel(BaseModel):
     def __init__(self, config):
         super(SVDKGPModel, self).__init__(config)
         self.config.update({
-<<<<<<< Updated upstream
-            'batch-size': int(2**12),
-            'lr': 0.01,
-=======
             'batch-size': int(2**8),
             'lr': 0.01,
             'n-epochs': 5,
->>>>>>> Stashed changes
         })
         self.config.update(config)
         self.model = DKLModel().to(self.device)

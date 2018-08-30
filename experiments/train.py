@@ -44,7 +44,7 @@ def main(args):
     if args.model == 'svdkgp':
         model.init_mll(len(train_loader))
 
-    n_eval = 20*len(train_loader)//100
+    n_eval = 100*len(train_loader)//100
 
     i = 0
     for epoch in range(config['n-epochs']):

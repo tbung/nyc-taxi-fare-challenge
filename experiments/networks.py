@@ -22,7 +22,7 @@ class NYCTaxiFareFeatureCreator(nn.Module):
 
 
 class NYCTaxiFareModel(nn.Module):
-    def __init__(self, dim_in, dim_out, embeddings=True):
+    def __init__(self, dim_in, dim_out, embeddings=True, softmax=True):
         super(NYCTaxiFareModel, self).__init__()
 
         self.feature_creator = NYCTaxiFareFeatureCreator()
@@ -38,8 +38,9 @@ class NYCTaxiFareModel(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(64),
             nn.Linear(64, dim_out),
-            nn.Softmax()
         ])
+        if softmax:
+            self.layers.append(nn.Softmax(dim=1))
 
     def forward(self, x, y):
         out = self.feature_creator(x, y)

@@ -6,7 +6,7 @@ from gpytorch.means import ConstantMean
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.random_variables import GaussianRandomVariable
 
-from networks import NYCTaxiFareFeatureCreator
+from networks import NYCTaxiFareFeatureCreator, NYCTaxiFareModel
 
 
 class NYCTaxiFareDeepKernel(nn.Module):
@@ -25,8 +25,8 @@ class NYCTaxiFareDeepKernel(nn.Module):
         ])
 
     def forward(self, x, y):
-        # out = self.feature_creator(x, y)
-        out = torch.cat([x, y.float()], dim=1)
+        out = self.feature_creator(x, y)
+        # out = torch.cat([x, y.float()], dim=1)
         for layer in self.layers:
             out = layer(out)
 
@@ -34,7 +34,7 @@ class NYCTaxiFareDeepKernel(nn.Module):
 
 
 class GPRegressionLayer(gpytorch.models.GridInducingVariationalGP):
-    def __init__(self, grid_size=20, grid_bounds=[(-1, 1), (-1, 1)]):
+    def __init__(self, grid_size=20, grid_bounds=[(-1, 1)]*2):
         super(GPRegressionLayer, self).__init__(
             grid_size=grid_size, grid_bounds=grid_bounds
         )
@@ -48,14 +48,17 @@ class GPRegressionLayer(gpytorch.models.GridInducingVariationalGP):
 
 
 class DKLModel(gpytorch.Module):
-    def __init__(self, grid_bounds=(-1., 1.)):
+    def __init__(self, grid_bounds=(-1., 1.), clusters=None):
         super(DKLModel, self).__init__()
-        self.feature_extractor = NYCTaxiFareDeepKernel([9, 1000, 500, 50, 2])
+        # self.feature_extractor = NYCTaxiFareDeepKernel([54, 1000, 500, 50, 1])
+        self.feature_extractor = NYCTaxiFareModel(54, clusters.shape[0])
         self.gp_layer = GPRegressionLayer()
         self.grid_bounds = grid_bounds
+        self.clusters = clusters
 
     def forward(self, x, y):
         features = self.feature_extractor(x, y)
+        features = self.clusters @ features.t()
         features = gpytorch.utils.scale_to_bounds(features,
                                                   self.grid_bounds[0],
                                                   self.grid_bounds[1])

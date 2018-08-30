@@ -12,7 +12,7 @@ from gp import DKLModel
 class BaseModel:
     def __init__(self, config):
         self.config = {
-            'batch-size': int(2**12),
+            'batch-size': int(2**8),
             'lr': 0.001,
             'n-epochs': 50,
             'save_interval': 10,
@@ -49,8 +49,8 @@ class NetworkModel(BaseModel):
     def __init__(self, config):
         super(NetworkModel, self).__init__(config)
         self.clusters = torch.load('../data/clusters.pt').to(self.device)
-        self.model = NYCTaxiFareModel(54, self.clusters.shape[0])
-        # self.model = NYCTaxiFareModel(54, 500, 1)
+        # self.model = NYCTaxiFareModel(54, self.clusters.shape[0])
+        self.model = NYCTaxiFareModel(54, 1, softmax=False)
         self.model.to(self.device)
 
         self.loss = F.mse_loss
@@ -62,9 +62,9 @@ class NetworkModel(BaseModel):
         )
 
     def process_batch(self, x, y, t):
-        z_ = self.model(x, y)
+        z = self.model(x, y).squeeze()
 
-        z = self.clusters @ z_.t()
+        # z = self.clusters @ z_.t()
 
         self.optimizer.zero_grad()
         loss = self.loss(z, t)
@@ -82,8 +82,8 @@ class NetworkModel(BaseModel):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
             t = t.to(self.device, non_blocking=True)
-            z_ = self.model(x, y)
-            z = self.clusters @ z_.t()
+            z = self.model(x, y).squeeze()
+            # z = self.clusters @ z_.t()
             mse += torch.sum((t - z)**2).item()
 
         return np.sqrt(mse/len(val_loader.dataset))
@@ -92,20 +92,21 @@ class NetworkModel(BaseModel):
 class SVDKGPModel(BaseModel):
     def __init__(self, config):
         super(SVDKGPModel, self).__init__(config)
+        self.clusters = torch.load('../data/clusters.pt').to(self.device)
         self.config.update({
             'batch-size': int(2**8),
-            'lr': 0.01,
+            'lr': 0.1,
             'n-epochs': 5,
         })
         self.config.update(config)
-        self.model = DKLModel().to(self.device)
+        self.model = DKLModel(clusters=self.clusters).to(self.device)
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood().to(
             self.device)
 
         self.optimizer = torch.optim.SGD([
             {'params': self.model.parameters()},
             {'params': self.likelihood.parameters()},
-        ], lr=0.1)
+        ], lr=0.01)
 
     def init_mll(self, N):
         self.mll = gpytorch.mlls.VariationalMarginalLogLikelihood(

@@ -12,7 +12,7 @@ from data import NYCTaxiFareDataset
 
 def get_data_loaders(batch_size):
     train_loader = DataLoader(
-        NYCTaxiFareDataset('../data/'),
+        NYCTaxiFareDataset('../data/', size=8000000),
         batch_size=batch_size, shuffle=True,
         num_workers=4, pin_memory=True
     )
@@ -44,7 +44,11 @@ def main(args):
     if args.model == 'svdkgp':
         model.init_mll(len(train_loader))
 
+<<<<<<< Updated upstream
     n_eval = 100*len(train_loader)//100
+=======
+    n_eval = 20*len(train_loader)//100
+>>>>>>> Stashed changes
 
     i = 0
     for epoch in range(config['n-epochs']):

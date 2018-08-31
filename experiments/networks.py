@@ -26,6 +26,7 @@ class NYCTaxiFareModel(nn.Module):
         super(NYCTaxiFareModel, self).__init__()
 
         self.feature_creator = NYCTaxiFareFeatureCreator()
+        self.dim_out = dim_out
 
         self.layers = nn.ModuleList([
             nn.Linear(dim_in, 1024),
@@ -38,8 +39,11 @@ class NYCTaxiFareModel(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(64),
             nn.Linear(64, dim_out),
+            nn.ReLU(),
+            nn.BatchNorm1d(dim_out),
         ])
         if softmax:
+            self.layers.append(nn.Linear(dim_out, dim_out))
             self.layers.append(nn.Softmax(dim=1))
 
     def forward(self, x, y):

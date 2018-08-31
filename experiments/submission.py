@@ -1,7 +1,7 @@
 # coding: utf-8
 import torch
-model = torch.load('out/model_046_5586598.pt')
-c = torch.load('../data/clusters.pt')
+model = torch.load('out/model_002_5729593.pt')
+c = torch.load('../data/clusters_32.pt')
 import pandas as pd
 d = pd.read_csv('../data/test.csv')
 d['pickup_datetime'] = d['pickup_datetime'].str.slice(0, 16)

@@ -14,13 +14,13 @@ def get_data_loaders(batch_size):
     train_loader = DataLoader(
         NYCTaxiFareDataset('../data/', size=8000000),
         batch_size=batch_size, shuffle=True,
-        num_workers=4, pin_memory=True
+        num_workers=6, pin_memory=False
     )
-    test_set = NYCTaxiFareDataset('../data/', train=False)
+    test_set = NYCTaxiFareDataset('../data/', size=8000000, train=False)
     val_loader = DataLoader(
         test_set,
         batch_size=len(test_set)//10, shuffle=False,
-        num_workers=1, pin_memory=True
+        num_workers=1, pin_memory=False
     )
     return train_loader, val_loader
 
@@ -44,7 +44,7 @@ def main(args):
     if args.model == 'svdkgp':
         model.init_mll(len(train_loader))
 
-    n_eval = 100*len(train_loader)//100
+    n_eval = config['test-percent']*len(train_loader)//100
 
     i = 0
     for epoch in range(config['n-epochs']):
@@ -56,10 +56,10 @@ def main(args):
 
             loss += model.process_batch(x, y, t)
 
-            if i % 100 == 0:
+            if (i+1) % config['loss-epochs'] == 0:
                 viz.line(
                     X=np.array([i]),
-                    Y=np.array([loss/100]),
+                    Y=np.array([loss/config['loss-epochs']]),
                     update='append',
                     win=loss_plot
                 )

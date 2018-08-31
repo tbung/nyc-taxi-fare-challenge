@@ -129,6 +129,8 @@ class NYCTaxiFareDataset(data.Dataset):
             (py >= np.floor(epy.min()))
         ]
 
+        print(data.iloc[:, 1:5].columns)
+
         # Normalize data
         data.iloc[:, 1:5] = (data.iloc[:, 1:5] - self.mean) / self.std
         edata.iloc[:, 0:4] = (edata.iloc[:, 0:4] - self.mean) / self.std

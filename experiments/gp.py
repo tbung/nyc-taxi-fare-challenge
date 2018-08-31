@@ -9,32 +9,8 @@ from gpytorch.random_variables import GaussianRandomVariable
 from networks import NYCTaxiFareFeatureCreator, NYCTaxiFareModel
 
 
-class NYCTaxiFareDeepKernel(nn.Module):
-    def __init__(self, dims):
-        super(NYCTaxiFareDeepKernel, self).__init__()
-        self.feature_creator = NYCTaxiFareFeatureCreator()
-
-        self.layers = nn.ModuleList([
-            nn.Linear(dims[0], dims[1]),
-            nn.ReLU(),
-            nn.Linear(dims[1], dims[2]),
-            nn.ReLU(),
-            nn.Linear(dims[2], dims[3]),
-            nn.ReLU(),
-            nn.Linear(dims[3], dims[4]),
-        ])
-
-    def forward(self, x, y):
-        out = self.feature_creator(x, y)
-        # out = torch.cat([x, y.float()], dim=1)
-        for layer in self.layers:
-            out = layer(out)
-
-        return out
-
-
 class GPRegressionLayer(gpytorch.models.GridInducingVariationalGP):
-    def __init__(self, grid_size=20, grid_bounds=[(-1, 1)]*2):
+    def __init__(self, grid_size=10, grid_bounds=[(-1, 1)]*2):
         super(GPRegressionLayer, self).__init__(
             grid_size=grid_size, grid_bounds=grid_bounds
         )
@@ -48,17 +24,15 @@ class GPRegressionLayer(gpytorch.models.GridInducingVariationalGP):
 
 
 class DKLModel(gpytorch.Module):
-    def __init__(self, grid_bounds=(-1., 1.), clusters=None):
+    def __init__(self, feature_extractor, grid_bounds=(-1., 1.), clusters=None):
         super(DKLModel, self).__init__()
-        # self.feature_extractor = NYCTaxiFareDeepKernel([54, 1000, 500, 50, 1])
-        self.feature_extractor = NYCTaxiFareModel(54, clusters.shape[0])
+        self.feature_extractor = feature_extractor
         self.gp_layer = GPRegressionLayer()
         self.grid_bounds = grid_bounds
         self.clusters = clusters
 
     def forward(self, x, y):
         features = self.feature_extractor(x, y)
-        features = self.clusters @ features.t()
         features = gpytorch.utils.scale_to_bounds(features,
                                                   self.grid_bounds[0],
                                                   self.grid_bounds[1])

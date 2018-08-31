@@ -15,8 +15,8 @@ class BaseModel:
             'batch-size': int(2**8),
             'lr': 0.001,
             'n-epochs': 50,
-            'save_interval': 10,
-            'val_interval': 500,
+            'loss-epochs': 100,
+            'test-percent': 100
         }
         self.config.update(config)
 
@@ -49,8 +49,8 @@ class NetworkModel(BaseModel):
     def __init__(self, config):
         super(NetworkModel, self).__init__(config)
         self.clusters = torch.load('../data/clusters.pt').to(self.device)
-        # self.model = NYCTaxiFareModel(54, self.clusters.shape[0])
-        self.model = NYCTaxiFareModel(54, 1, softmax=False)
+        self.model = NYCTaxiFareModel(54, self.clusters.shape[0])
+        # self.model = NYCTaxiFareModel(54, 1, softmax=False)
         self.model.to(self.device)
 
         self.loss = F.mse_loss
@@ -60,11 +60,13 @@ class NetworkModel(BaseModel):
             weight_decay=1e-4,
             momentum=0.9
         )
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 15,
+                                                         0.1)
 
     def process_batch(self, x, y, t):
         z = self.model(x, y).squeeze()
 
-        # z = self.clusters @ z_.t()
+        z = self.clusters @ z.t()
 
         self.optimizer.zero_grad()
         loss = self.loss(z, t)
@@ -83,7 +85,7 @@ class NetworkModel(BaseModel):
             y = y.to(self.device, non_blocking=True)
             t = t.to(self.device, non_blocking=True)
             z = self.model(x, y).squeeze()
-            # z = self.clusters @ z_.t()
+            z = self.clusters @ z.t()
             mse += torch.sum((t - z)**2).item()
 
         return np.sqrt(mse/len(val_loader.dataset))
@@ -92,21 +94,31 @@ class NetworkModel(BaseModel):
 class SVDKGPModel(BaseModel):
     def __init__(self, config):
         super(SVDKGPModel, self).__init__(config)
-        self.clusters = torch.load('../data/clusters.pt').to(self.device)
+        # self.clusters = torch.load('../data/clusters.pt').to(self.device)
         self.config.update({
-            'batch-size': int(2**8),
-            'lr': 0.1,
-            'n-epochs': 5,
+            'batch-size': int(2**16),
+            'lr': 0.01,
+            'n-epochs': 500,
+            'loss-epochs': 1,
+            'test-percent': 500
         })
         self.config.update(config)
-        self.model = DKLModel(clusters=self.clusters).to(self.device)
+        # self.feature_extractor = torch.load('out/model_000_5674493.pt')
+        self.feature_extractor = NYCTaxiFareModel(54, 2,
+                                                  softmax=False).to(self.device)
+        self.model = DKLModel(self.feature_extractor).to(self.device)
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood().to(
-            self.device)
+            self.device
+        )
 
-        self.optimizer = torch.optim.SGD([
+        self.optimizer = torch.optim.Adam([
             {'params': self.model.parameters()},
+            # {'params': self.feature_extractor.parameters()},
             {'params': self.likelihood.parameters()},
-        ], lr=0.01)
+        ], lr=self.config['lr'])
+
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 300,
+                                                         0.1)
 
     def init_mll(self, N):
         self.mll = gpytorch.mlls.VariationalMarginalLogLikelihood(
@@ -116,18 +128,19 @@ class SVDKGPModel(BaseModel):
     def process_batch(self, x, y, t):
         self.optimizer.zero_grad()
 
-        # Because the grid is relatively small, we turn off the Toeplitz matrix
-        # multiplication and just perform them directly
-        # We find this to be more efficient when the grid is very small.
         with gpytorch.settings.use_toeplitz(False):
             z = self.model(x, y)
             loss = -self.mll(z, t)
 
-        # The actual optimization step
         loss.backward(retain_graph=True)
         self.optimizer.step()
+        self.scheduler.step()
 
-        return loss.item()
+        with torch.no_grad():
+            z = self.likelihood(self.model(x, y)).mean()
+            mse = torch.mean((t - z.mean())**2)
+
+        return mse.item()
 
     @torch.no_grad()
     def eval(self, val_loader):

@@ -50,9 +50,10 @@ class NYCTaxiFareDataset(data.Dataset):
             self.categorical = self.categorical[int(-self.testsplit *
                                                 self.categorical.shape[0]):]
 
+        self.features = torch.cat((self.gps, self.categorical.float()), dim=1)
+
     def __getitem__(self, index):
-        return (self.gps[index],
-                self.categorical[index],
+        return (self.features[index],
                 self.target[index])
 
     def __len__(self):

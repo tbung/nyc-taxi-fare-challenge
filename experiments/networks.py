@@ -32,22 +32,22 @@ class NYCTaxiFareModel(nn.Module):
             nn.Linear(dim_in, 1024),
             nn.ReLU(),
             nn.BatchNorm1d(1024),
-            nn.Linear(1024, 256),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Linear(256, 64),
+            nn.BatchNorm1d(1024),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.BatchNorm1d(512),
+            nn.Linear(512, 64),
             nn.ReLU(),
             nn.BatchNorm1d(64),
             nn.Linear(64, dim_out),
-            nn.ReLU(),
-            nn.BatchNorm1d(dim_out),
         ])
         if softmax:
-            self.layers.append(nn.Linear(dim_out, dim_out))
             self.layers.append(nn.Softmax(dim=1))
 
-    def forward(self, x, y):
-        out = self.feature_creator(x, y)
+    def forward(self, x):
+        out = self.feature_creator(x[:, :4], x[:, 4:].long())
         # out = torch.cat([x, y.float()], dim=1)
         for layer in self.layers:
             out = layer(out)

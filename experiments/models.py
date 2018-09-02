@@ -153,22 +153,20 @@ class SVDKGPModel(BaseModel):
     @torch.no_grad()
     def eval(self, val_loader):
         self.model.eval()
-        self.likelihood.eval()
         mse = 0
         for x, y in tqdm(val_loader):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
-            z = self.model(x)
+            z, _ = self.model(x)
             mse += torch.sum((y - z)**2).item()
 
         self.model.train()
-        self.likelihood.train()
 
         return np.sqrt(mse/len(val_loader.dataset))
 
     def save(self, epoch, run_id):
         self.model.cpu()
-        pyro.get_param_store().save(f'out/model_{epoch:03d}_{run_id}.pt')
+        pyro.get_param_store().save(f'out/model_{epoch:03d}_{run_id}.pyro')
         self.model.to(self.device)
 
 

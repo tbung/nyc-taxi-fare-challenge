@@ -6,11 +6,11 @@ class NYCTaxiFareFeatureCreator(nn.Module):
     def __init__(self):
         super(NYCTaxiFareFeatureCreator, self).__init__()
         self.embeddings = nn.ModuleList([
-            nn.Embedding(6, 10),    # Passenger count - 1
-            nn.Embedding(7, 10),    # Year - 2009
-            nn.Embedding(12, 10),   # Month
-            nn.Embedding(7, 10),    # Weekday
-            nn.Embedding(96, 10)    # Quaterhour
+            nn.Embedding(6, 3),    # Passenger count - 1
+            nn.Embedding(7, 4),    # Year - 2009
+            nn.Embedding(12, 6),   # Month
+            nn.Embedding(7, 4),    # Weekday
+            nn.Embedding(96, 50)    # Quaterhour
         ])
 
     def forward(self, x, y):
@@ -29,18 +29,22 @@ class NYCTaxiFareModel(nn.Module):
         self.dim_out = dim_out
 
         self.layers = nn.ModuleList([
-            nn.Linear(dim_in, 1024),
+            nn.Linear(dim_in, 2048),
+            nn.ReLU(),
+            nn.BatchNorm1d(2048),
+            nn.Dropout(),
+            nn.Linear(2048, 1024),
             nn.ReLU(),
             nn.BatchNorm1d(1024),
-            nn.Linear(1024, 1024),
-            nn.ReLU(),
-            nn.BatchNorm1d(1024),
+            nn.Dropout(),
             nn.Linear(1024, 512),
             nn.ReLU(),
             nn.BatchNorm1d(512),
+            nn.Dropout(),
             nn.Linear(512, 64),
             nn.ReLU(),
             nn.BatchNorm1d(64),
+            nn.Dropout(),
             nn.Linear(64, dim_out),
         ])
         if softmax:

@@ -10,17 +10,17 @@ import models
 from data import NYCTaxiFareDataset
 
 
-def get_data_loaders(batch_size):
+def get_data_loaders(batch_size, data_size):
     train_loader = DataLoader(
-        NYCTaxiFareDataset('../data/', size=8000000),
+        NYCTaxiFareDataset('../data/', size=data_size),
         batch_size=batch_size, shuffle=True,
         num_workers=6, pin_memory=False
     )
-    test_set = NYCTaxiFareDataset('../data/', size=8000000, train=False)
+    test_set = NYCTaxiFareDataset('../data/', size=data_size, train=False)
     val_loader = DataLoader(
         test_set,
-        batch_size=len(test_set)//10, shuffle=False,
-        num_workers=1, pin_memory=False
+        batch_size=len(test_set)//12, shuffle=False,
+        num_workers=4, pin_memory=False
     )
     return train_loader, val_loader
 
@@ -36,7 +36,7 @@ def main(args):
     run_id = str(int(time.time()))[-7:]
     device = 'cuda'
 
-    train_loader, val_loader = get_data_loaders(2**12)
+    train_loader, val_loader = get_data_loaders(2**14, 8000000)
 
     model = models.get_model(args.model)(vars(args), train_loader)
     config = model.get_config()
@@ -81,9 +81,11 @@ if __name__ == '__main__':
                         help='')
     parser.add_argument('--batch-size', type=int, default=argparse.SUPPRESS,
                         help='')
-    parser.add_argument('--lr', type=int, default=argparse.SUPPRESS,
+    parser.add_argument('--lr', type=float, default=argparse.SUPPRESS,
                         help='')
     parser.add_argument('--checkpoint', type=str, default=argparse.SUPPRESS,
+                        help='')
+    parser.add_argument('--load', type=str, default=argparse.SUPPRESS,
                         help='')
 
     args = parser.parse_args()

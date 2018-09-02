@@ -5,8 +5,10 @@ import pyro.contrib.gp as gp
 
 import numpy as np
 from tqdm import tqdm
+# from sklearn.cluster import MiniBatchKMeans
 
 from networks import NYCTaxiFareModel
+from gp import DGP
 
 
 class BaseModel:
@@ -50,23 +52,23 @@ class NetworkModel(BaseModel):
         super(NetworkModel, self).__init__(config)
         self.config.update({
             'batch-size': int(2**8),
-            'lr': 0.001,
+            'lr': 0.01,
             'n-epochs': 50,
-            'loss-epochs': 5,
+            'loss-epochs': 100,
             'test-percent': 100
         })
         self.config.update(config)
         # self.clusters = torch.load('../data/clusters_32.pt').to(self.device)
         # self.model = NYCTaxiFareModel(54, self.clusters.shape[0], softmax=True)
-        self.model = NYCTaxiFareModel(54, 2, softmax=False)
+        self.model = NYCTaxiFareModel(71, 1, softmax=False)
         self.model.to(self.device)
 
         self.loss = F.mse_loss
-        self.optimizer = torch.optim.SGD(
+        self.optimizer = torch.optim.Adam(
             self.model.parameters(),
             lr=self.config['lr'],
-            weight_decay=1e-4,
-            momentum=0.9
+            # weight_decay=1e-4,
+            # momentum=0.9
         )
         self.scheduler = torch.optim.lr_scheduler.StepLR(
             self.optimizer, 1,
@@ -74,7 +76,7 @@ class NetworkModel(BaseModel):
         )
 
     def process_batch(self, x, y):
-        z = self.model(x).squeeze().mean(dim=1)
+        z = self.model(x).squeeze()
 
         # z = self.clusters @ z.t()
 
@@ -94,7 +96,7 @@ class NetworkModel(BaseModel):
         for x, y in tqdm(val_loader):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
-            z = self.model(x).squeeze().mean(dim=1)
+            z = self.model(x).squeeze()
             # z = self.clusters @ z.t()
             mse += torch.sum((y - z)**2).item()
 
@@ -104,14 +106,14 @@ class NetworkModel(BaseModel):
 class SVDKGPModel(BaseModel):
     def __init__(self, config, train_loader):
         super(SVDKGPModel, self).__init__(config)
-        self.clusters = torch.load('../data/clusters_32.pt').to(self.device)
+        self.clusters = torch.load('../data/clusters_features.pt').to(self.device)
         self.config.update({
             'batch-size': int(2**16),
             'lr': 0.001,
             'n-epochs': 50,
             'loss-epochs': 50,
             'test-percent': 100,
-            'n_inducing': 12000,
+            'n_inducing': 16000,
         })
         self.config.update(config)
 
@@ -120,15 +122,21 @@ class SVDKGPModel(BaseModel):
             # del self.feature_extractor.layers[-1]
         else:
             self.feature_extractor = NYCTaxiFareModel(
-                54, 2, softmax=False
+                71, 1, softmax=False
             ).to(self.device)
 
-        def feature_fn(x):
-            return pyro.module("DNN", self.feature_extractor)(x)
+        if 'load' in self.config:
+            pyro.get_param_store().load(self.config['load'],
+                                        map_location=self.device)
 
-        kernel = gp.kernels.RBF(input_dim=2,
-                                variance=torch.tensor(0.1)).add(gp.kernels.WhiteNoise(input_dim=2)).warp(iwarping_fn=feature_fn)
-        Xu = next(iter(train_loader))[0][-self.config['n_inducing']:]
+        def feature_fn(x):
+            return pyro.module("DNN", self.feature_extractor,
+                               update_module_params=False)(x)
+
+        kernel = gp.kernels.RBF(input_dim=1,
+                                variance=torch.tensor(0.1)).add(gp.kernels.WhiteNoise(input_dim=1)).warp(iwarping_fn=feature_fn)
+        # Xu = self.feature_extractor(self.clusters).reshape(-1, 1)
+        Xu = self.clusters
         likelihood = gp.likelihoods.Gaussian(variance=torch.tensor(0.1))
         self.model = gp.models.VariationalSparseGP(
             X=Xu, y=None, kernel=kernel, Xu=Xu, likelihood=likelihood,
@@ -170,9 +178,71 @@ class SVDKGPModel(BaseModel):
         self.model.to(self.device)
 
 
+class DGPModel(BaseModel):
+    def __init__(self, config, train_loader):
+        super(DGPModel, self).__init__(config)
+        self.clusters = torch.load('../data/clusters_features.pt').to(self.device)
+        self.config.update({
+            'batch-size': int(2**16),
+            'lr': 0.01,
+            'n-epochs': 50,
+            'loss-epochs': 10,
+            'test-percent': 100,
+            'n_inducing': 16000,
+        })
+        self.config.update(config)
+
+        if 'load' in self.config:
+            pyro.get_param_store().load(self.config['load'],
+                                        map_location=self.device)
+
+        Xu = self.clusters
+
+        self.model = DGP(5, Xu, len(train_loader.dataset))
+
+        # for layer in self.model.layers:
+            # layer.u_scale_tril.data *= 1e-2
+
+        optimizer = pyro.optim.Adam({'lr': self.config['lr']})
+        elbo = pyro.infer.Trace_ELBO()
+        self.svi = pyro.infer.SVI(self.model.model,
+                                  self.model.guide,
+                                  optimizer, elbo)
+
+    def process_batch(self, x, y):
+        loss = self.svi.step(x, y)
+
+        with torch.no_grad():
+            z, _ = self.model(x)
+            mse = torch.mean((y - z)**2)
+
+        return mse.item()
+
+    @torch.no_grad()
+    def eval(self, val_loader):
+        mse = 0
+        for x, y in tqdm(val_loader):
+            x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
+            z, _ = self.model(x)
+            mse += torch.sum((y - z)**2).item()
+
+        return np.sqrt(mse/len(val_loader.dataset))
+
+    def save(self, epoch, run_id):
+        self.model.cpu()
+        pyro.get_param_store().save(f'out/model_{epoch:03d}_{run_id}.pyro')
+        self.model.to(self.device)
+
+
+class BayesianNetworkModel(BaseModel):
+    pass
+
+
 __models = {
     'network': NetworkModel,
     'svdkgp': SVDKGPModel,
+    'dgp': DGPModel,
 }
 
 

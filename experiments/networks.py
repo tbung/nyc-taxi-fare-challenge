@@ -57,3 +57,75 @@ class NYCTaxiFareModel(nn.Module):
             out = layer(out)
 
         return out
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, dim_in, dim_out):
+        super(ResidualBlock, self).__init__()
+
+        self.layers = nn.ModuleList([
+            nn.BatchNorm1d(dim_in),
+            nn.ReLU(),
+            nn.Linear(dim_in, dim_out),
+            nn.BatchNorm1d(dim_out),
+            nn.ReLU(),
+            nn.Linear(dim_out, dim_out),
+        ])
+
+        self.resample = None
+
+        if dim_in != dim_out:
+            self.resample = nn.Linear(dim_in, dim_out)
+
+    def forward(self, x):
+        residual = x
+
+        if self.resample:
+            residual = self.resample(residual)
+
+        for layer in self.layers:
+            x = layer(x)
+
+        return x + residual
+
+
+class NYCTaxiFareResNet(nn.Module):
+    def __init__(self, dim_in, dim_out, blocks, softmax=True):
+        super(NYCTaxiFareResNet, self).__init__()
+
+        self.feature_creator = NYCTaxiFareFeatureCreator()
+
+        self.layers = nn.ModuleList([
+            ResidualBlock(dim_in, 4096)
+        ])
+
+        self.layers.extend(
+            [ResidualBlock(4096, 4096) for _ in range(blocks[0])]
+        )
+
+        self.layers.append(ResidualBlock(4096, 2048))
+        self.layers.extend(
+            [ResidualBlock(2048, 2048) for _ in range(blocks[0])]
+        )
+
+        self.layers.append(ResidualBlock(2048, 512))
+        self.layers.extend(
+            [ResidualBlock(512, 512) for _ in range(blocks[0])]
+        )
+
+        self.layers.append(ResidualBlock(512, 256))
+        self.layers.extend(
+            [ResidualBlock(256, 256) for _ in range(blocks[0])]
+        )
+
+        self.layers.append(ResidualBlock(256, dim_out))
+
+        if softmax:
+            self.layers.append(nn.Softmax(dim=1))
+
+    def forward(self, x):
+        x = self.feature_creator(x[:, :4], x[:, 4:].long())
+        for layer in self.layers:
+            x = layer(x)
+
+        return x

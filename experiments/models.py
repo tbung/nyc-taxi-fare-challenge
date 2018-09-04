@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 # from sklearn.cluster import MiniBatchKMeans
 
-from networks import NYCTaxiFareModel
+from networks import NYCTaxiFareModel, NYCTaxiFareResNet
 from gp import DGP
 
 
@@ -58,9 +58,9 @@ class NetworkModel(BaseModel):
             'test-percent': 100
         })
         self.config.update(config)
-        # self.clusters = torch.load('../data/clusters_32.pt').to(self.device)
-        # self.model = NYCTaxiFareModel(54, self.clusters.shape[0], softmax=True)
-        self.model = NYCTaxiFareModel(71, 1, softmax=False)
+        self.clusters = torch.load('../data/clusters_584.pt').to(self.device)
+        self.model = NYCTaxiFareModel(71, self.clusters.shape[0], softmax=True)
+        # self.model = NYCTaxiFareModel(71, 1, softmax=False)
         self.model.to(self.device)
 
         self.loss = F.mse_loss
@@ -78,7 +78,7 @@ class NetworkModel(BaseModel):
     def process_batch(self, x, y):
         z = self.model(x).squeeze()
 
-        # z = self.clusters @ z.t()
+        z = self.clusters @ z.t()
 
         self.optimizer.zero_grad()
         loss = self.loss(z, y)
@@ -97,10 +97,55 @@ class NetworkModel(BaseModel):
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
             z = self.model(x).squeeze()
-            # z = self.clusters @ z.t()
+            z = self.clusters @ z.t()
             mse += torch.sum((y - z)**2).item()
 
         return np.sqrt(mse/len(val_loader.dataset))
+
+
+class ResNetModel(NetworkModel):
+    def __init__(self, config, *args):
+        super(ResNetModel, self).__init__(config)
+        self.config.update({
+            'batch-size': int(2**8),
+            'lr': 0.001,
+            'n-epochs': 50,
+            'loss-epochs': 100,
+            'test-percent': 100
+        })
+        self.config.update(config)
+
+        self.clusters = torch.load('../data/clusters_584.pt').to(self.device)
+
+        self.model = NYCTaxiFareResNet(71, self.clusters.shape[0], [3, 4, 6, 3])
+
+        self.model.to(self.device)
+
+        self.loss = F.mse_loss
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=self.config['lr'],
+            # weight_decay=1e-4,
+            # momentum=0.9
+        )
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer, 1,
+            np.exp(np.log(0.1)/28125)
+        )
+
+    def process_batch(self, x, y):
+        z = self.model(x).squeeze()
+
+        z = self.clusters @ z.t()
+
+        self.optimizer.zero_grad()
+        loss = self.loss(z, y)
+        loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.2)
+        self.optimizer.step()
+        self.scheduler.step()
+
+        return loss.item()
 
 
 class SVDKGPModel(BaseModel):
@@ -241,6 +286,7 @@ class BayesianNetworkModel(BaseModel):
 
 __models = {
     'network': NetworkModel,
+    'resnet': ResNetModel,
     'svdkgp': SVDKGPModel,
     'dgp': DGPModel,
 }

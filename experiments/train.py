@@ -19,7 +19,7 @@ def get_data_loaders(batch_size, data_size):
     test_set = NYCTaxiFareDataset('../data/', size=data_size, train=False)
     val_loader = DataLoader(
         test_set,
-        batch_size=len(test_set)//12, shuffle=False,
+        batch_size=len(test_set)//100, shuffle=False,
         num_workers=4, pin_memory=False
     )
     return train_loader, val_loader
@@ -36,7 +36,7 @@ def main(args):
     run_id = str(int(time.time()))[-7:]
     device = 'cuda'
 
-    train_loader, val_loader = get_data_loaders(2**14, 8000000)
+    train_loader, val_loader = get_data_loaders(2**8, 8000000)
 
     model = models.get_model(args.model)(vars(args), train_loader)
     config = model.get_config()
@@ -50,7 +50,7 @@ def main(args):
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
 
-            loss += model.process_batch(x, y)
+            loss += np.sqrt(model.process_batch(x, y))
 
             if (i+1) % config['loss-epochs'] == 0:
                 viz.line(
@@ -59,11 +59,13 @@ def main(args):
                     update='append',
                     win=loss_plot
                 )
+                print(f"Train Loss: {loss/config['loss-epochs']:.2f}")
                 loss = 0
 
             if (i+1) % n_eval == 0:
                 model.save(epoch, run_id)
                 acc = model.eval(val_loader)
+                print(f"Test error: {acc:.2f}")
                 viz.line(X=np.array([i]), Y=np.array([acc]), update='append',
                          win=acc_plot)
             i += 1

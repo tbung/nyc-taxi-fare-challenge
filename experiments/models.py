@@ -117,16 +117,20 @@ class ResNetModel(NetworkModel):
 
         self.clusters = torch.load('../data/clusters_584.pt').to(self.device)
 
-        self.model = NYCTaxiFareResNet(71, self.clusters.shape[0], [3, 4, 6, 3])
+        self.model = NYCTaxiFareResNet(71, self.clusters.shape[0], [2, 2, 2, 2])
 
         self.model.to(self.device)
 
         self.loss = F.mse_loss
-        self.optimizer = torch.optim.Adam(
+        # self.optimizer = torch.optim.Adam(
+        #     self.model.parameters(),
+        #     lr=self.config['lr'],
+        # )
+        self.optimizer = torch.optim.SGD(
             self.model.parameters(),
             lr=self.config['lr'],
-            # weight_decay=1e-4,
-            # momentum=0.9
+            weight_decay=1e-4,
+            momentum=0.9
         )
         self.scheduler = torch.optim.lr_scheduler.StepLR(
             self.optimizer, 1,

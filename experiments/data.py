@@ -6,8 +6,8 @@ import torch
 
 
 class NYCTaxiFareDataset(data.Dataset):
-    raw_file = 'data_raw.feather'
-    raw_eval = 'eval.feather'
+    raw_file = 'data_raw.pkl'
+    raw_eval = 'data_eval.pkl'
     train_folder = 'data_train'
     test_folder = 'data_test'
     eval_folder = 'data_eval'
@@ -73,8 +73,8 @@ class NYCTaxiFareDataset(data.Dataset):
         (self.root / self.test_folder).mkdir()
         (self.root / self.eval_folder).mkdir()
 
-        data = pd.read_feather(self.root / self.raw_file)
-        edata = pd.read_feather(self.root / self.raw_eval)
+        data = pd.read_pickle(self.root / self.raw_file)
+        edata = pd.read_pickle(self.root / self.raw_eval)
 
         # Filter null data
         data = data.dropna(how='any', axis='rows')

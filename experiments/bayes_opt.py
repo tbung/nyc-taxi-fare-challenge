@@ -160,16 +160,17 @@ def train(params, max_epochs=5):
     print(params)
 
     train_loader, test_loader = get_data_loaders(int(params['batch_size']),
-                                                 800000)
+                                                 80000)
 
     n_clusters = int(params['n_clusters'])
 
     if n_clusters > 1:
         # Find clusters
+        d = torch.load('../data/data_train/tgt.pt')
         k = MiniBatchKMeans(n_clusters=n_clusters, compute_labels=False,
                             max_no_improvement=100)
 
-        k.fit(train_loader.dataset.target.numpy().reshape(-1, 1))
+        k.fit(d.numpy().reshape(-1, 1))
         clusters = torch.tensor(k.cluster_centers_.squeeze(), dtype=torch.float,
                                 device=device)
 

@@ -9,6 +9,7 @@ import pyro
 import pyro.contrib.gp as gp
 from sklearn.cluster import MiniBatchKMeans
 from collections import OrderedDict
+from pathlib import Path
 
 from tqdm import tqdm, trange
 
@@ -20,19 +21,22 @@ from data import NYCTaxiFareDataset
 pyro.set_rng_seed(1234)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+d = torch.load('../data/data_train/tgt.pt')
 
 search_space = OrderedDict({
     'dim_hidden': [10, 50, 100, 500, 1000, 5000],
     'n_clusters': [1, 10, 50, 100, 500, 1000, 5000],
     'n_layers': list(range(1, 5)),
     'lr': [0.1**i for i in range(1, 8)],
-    'batch_size': [2**i for i in range(4, 14)],
+    'batch_size': [2**i for i in range(6, 14)],
     'momentum': np.arange(0, 1, 0.1),
     'p_drop': np.arange(0, 1, 0.1),
 })
 
-lower_bound = torch.tensor([min(v) for k, v in search_space.items()])
-upper_bound = torch.tensor([max(v) for k, v in search_space.items()])
+lower_bound = torch.tensor([min(v) for k, v in search_space.items()],
+                           dtype=torch.double)
+upper_bound = torch.tensor([max(v) for k, v in search_space.items()],
+                           dtype=torch.double)
 
 
 def to_01(x):
@@ -48,7 +52,7 @@ def pick_initial(N):
     for k, v in search_space.items():
         x.append(np.random.choice(v, N))
 
-    return torch.tensor(np.stack(x, axis=1), dtype=torch.float)
+    return torch.tensor(np.stack(x, axis=1), dtype=torch.double)
 
 
 def label_params(params):
@@ -81,7 +85,7 @@ def lower_confidence_bound(x, model, kappa=2):
 
 
 def update_posterior(params, model):
-    y_ = train(params).cpu()
+    y_ = train(params).to('cpu', torch.double)
     X = torch.cat([model.X.data, params.data], dim=0)
     y = torch.cat([model.y.data, y_.data.reshape(-1)], dim=0)
     model.set_data(X, y)
@@ -95,7 +99,7 @@ def find_a_candidate(x_init, model):
     x_init = to_01(x_init)
     unconstrained_x_init = transform_to(constraint).inv(x_init)
     unconstrained_x = torch.tensor(unconstrained_x_init, requires_grad=True,
-                                   dtype=torch.float)
+                                   dtype=torch.double)
     minimizer = optim.LBFGS([unconstrained_x])
 
     def closure():
@@ -134,10 +138,10 @@ def next_x(model, lower_bound=0, upper_bound=1, num_candidates=5):
 
 def optimize(n_iter):
     print("Obtaining initial samples")
-    x_init = pick_initial(5)
+    x_init = pick_initial(25)
     y = []
     for x in x_init:
-        y.append(train(x))
+        y.append(train(x).to(torch.double))
 
     y = torch.stack(y).cpu()
 
@@ -145,36 +149,37 @@ def optimize(n_iter):
         x_init, y,
         gp.kernels.Exponential(input_dim=len(search_space)),
         noise=torch.tensor(0.1), jitter=1.0e-4
-    )
+    ).to(torch.double)
     print("Finding optimal parameters")
     for i in range(n_iter):
         xmin = next_x(gpmodel)
         y = update_posterior(xmin, gpmodel)
-        print(f"Current MSE: {np.sqrt(y)}")
+        print(f"Current MSE: {y}")
 
     return xmin
 
 
-def train(params, max_epochs=5):
-    params = label_params(params)
+def train(params, max_epochs=10):
+    params = label_params(params.to(torch.float))
     print(params)
 
     train_loader, test_loader = get_data_loaders(int(params['batch_size']),
-                                                 80000)
+                                                 1000000)
 
     n_clusters = int(params['n_clusters'])
 
     if n_clusters > 1:
         # Find clusters
-        d = torch.load('../data/data_train/tgt.pt')
         k = MiniBatchKMeans(n_clusters=n_clusters, compute_labels=False,
-                            max_no_improvement=100)
+                            max_iter=10,
+                            max_no_improvement=100, random_state=1234)
 
         k.fit(d.numpy().reshape(-1, 1))
-        clusters = torch.tensor(k.cluster_centers_.squeeze(), dtype=torch.float,
+        clusters = torch.tensor(k.cluster_centers_.squeeze(),
+                                dtype=torch.float,
                                 device=device)
 
-    model = TaxiNet(dim_out=n_clusters, **params).to(device)
+    model = TaxiNet(dim_out=n_clusters, **params).to(device, torch.float)
 
     optimizer = optim.SGD(
         model.parameters(), lr=params['lr'],
@@ -183,7 +188,7 @@ def train(params, max_epochs=5):
 
     for epoch in trange(max_epochs):
         for x, y in tqdm(train_loader):
-            x, y = x.to(device), y.to(device)
+            x, y = x.to(device, torch.float), y.to(device, torch.float)
 
             optimizer.zero_grad()
             y_ = model(x)
@@ -199,18 +204,25 @@ def train(params, max_epochs=5):
     with torch.no_grad():
         mse = 0
         for x, y in test_loader:
-            x, y = x.to(device), y.to(device)
+            x, y = x.to(device, torch.float), y.to(device, torch.float)
             y_ = model(x)
 
             if n_clusters > 1:
                 y_ = clusters @ y_.t()
 
-            mse += F.mse_loss(y, y_.squeeze())
+            mse += torch.sum((y - y_)**2)
 
         rmse = torch.sqrt(mse/len(test_loader.dataset))
+
+    model.cpu()
+    torch.save(model, f'out/model_rmse{rmse:.2f}.pt')
+    model.to(device)
 
     return rmse
 
 
 if __name__ == "__main__":
+    outpath = Path('./out')
+    outpath.mkdir(exist_ok=True)
+
     print(label_params(optimize(20)))

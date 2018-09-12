@@ -10,6 +10,8 @@ import pyro.contrib.gp as gp
 from sklearn.cluster import MiniBatchKMeans
 from collections import OrderedDict
 from pathlib import Path
+import time
+import crayons
 
 from tqdm import tqdm, trange
 
@@ -19,6 +21,8 @@ from network import TaxiNet
 from data import NYCTaxiFareDataset
 
 pyro.set_rng_seed(1234)
+
+runid = str(int(time.time()))[-7:]
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 d = torch.load('../data/data_train/tgt.pt')
@@ -137,10 +141,10 @@ def next_x(model, lower_bound=0, upper_bound=1, num_candidates=5):
 
 
 def optimize(n_iter):
-    print("Obtaining initial samples")
-    x_init = pick_initial(25)
+    print(crayons.cyan("Obtaining initial samples", bold=True))
+    x_init = pick_initial(30)
     y = []
-    for x in x_init:
+    for x in tqdm(x_init, ncols=80, leave=False):
         y.append(train(x).to(torch.double))
 
     y = torch.stack(y).cpu()
@@ -150,18 +154,17 @@ def optimize(n_iter):
         gp.kernels.Exponential(input_dim=len(search_space)),
         noise=torch.tensor(0.1), jitter=1.0e-4
     ).to(torch.double)
-    print("Finding optimal parameters")
+    print(crayons.cyan("Finding optimal parameters", bold=True))
     for i in range(n_iter):
         xmin = next_x(gpmodel)
         y = update_posterior(xmin, gpmodel)
-        print(f"Current MSE: {y}")
 
     return xmin
 
 
 def train(params, max_epochs=10):
     params = label_params(params.to(torch.float))
-    print(params)
+    # print(params)
 
     train_loader, test_loader = get_data_loaders(int(params['batch_size']),
                                                  1000000)
@@ -186,8 +189,8 @@ def train(params, max_epochs=10):
         momentum=params['momentum']
     )
 
-    for epoch in trange(max_epochs):
-        for x, y in tqdm(train_loader):
+    for epoch in trange(max_epochs, ncols=80, leave=False):
+        for x, y in tqdm(train_loader, ncols=80, leave=False):
             x, y = x.to(device, torch.float), y.to(device, torch.float)
 
             optimizer.zero_grad()
@@ -198,7 +201,7 @@ def train(params, max_epochs=10):
 
             loss = F.mse_loss(y, y_.squeeze())
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.2)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.2)
             optimizer.step()
 
     with torch.no_grad():
@@ -215,14 +218,23 @@ def train(params, max_epochs=10):
         rmse = torch.sqrt(mse/len(test_loader.dataset))
 
     model.cpu()
-    torch.save(model, f'out/model_rmse{rmse:.2f}.pt')
+    save(model, params, f'out/model_{runid}_rmse{rmse:03.2f}.pt')
     model.to(device)
+    print(crayons.red(f"RMSE: {rmse}"))
 
     return rmse
+
+
+def save(model, params, file):
+    torch.save((model, params), file)
+
+
+def load(file):
+    return torch.load(file)
 
 
 if __name__ == "__main__":
     outpath = Path('./out')
     outpath.mkdir(exist_ok=True)
 
-    print(label_params(optimize(20)))
+    label_params(optimize(50))

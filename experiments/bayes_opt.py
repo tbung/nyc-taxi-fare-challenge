@@ -12,6 +12,8 @@ from collections import OrderedDict
 from pathlib import Path
 import time
 import crayons
+import fire
+import pandas as pd
 
 from tqdm import tqdm, trange
 
@@ -26,16 +28,27 @@ runid = str(int(time.time()))[-7:]
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 d = torch.load('../data/data_train/tgt.pt')
+# Find clusters
+k = MiniBatchKMeans(n_clusters=5000, compute_labels=False,
+                    max_no_improvement=100, random_state=1234)
+
+k.fit(d.numpy().reshape(-1, 1))
+clusters = torch.tensor(np.unique(k.cluster_centers_.squeeze()),
+                        dtype=torch.float,
+                        )
+clusters = torch.cat([clusters, d.min().view(1), d.max().view(1)]).to(device)
 
 search_space = OrderedDict({
-    'dim_hidden': [10, 50, 100, 500, 1000, 5000],
-    'n_clusters': [1, 10, 50, 100, 500, 1000, 5000],
-    'n_layers': list(range(1, 5)),
     'lr': [0.1**i for i in range(1, 8)],
-    'batch_size': [2**i for i in range(6, 14)],
+    'batch_size': [2**i for i in range(8, 14)],
     'momentum': np.arange(0, 1, 0.1),
+    'l2': [0.1**i for i in range(1, 6)],
     'p_drop': np.arange(0, 1, 0.1),
 })
+
+space = torch.tensor(np.array(
+    np.meshgrid(*[v for k, v in search_space.items()])
+).T.reshape(-1, len(search_space)), dtype=torch.double)
 
 lower_bound = torch.tensor([min(v) for k, v in search_space.items()],
                            dtype=torch.double)
@@ -86,6 +99,12 @@ def lower_confidence_bound(x, model, kappa=2):
     mu, variance = model(x, full_cov=False, noiseless=False)
     sigma = variance.sqrt()
     return mu - kappa * sigma
+
+
+def upper_confidence_bound(x, model, kappa=2):
+    mu, variance = model(x, full_cov=False, noiseless=False)
+    sigma = variance.sqrt()
+    return mu + kappa * sigma
 
 
 def update_posterior(params, model):
@@ -140,14 +159,37 @@ def next_x(model, lower_bound=0, upper_bound=1, num_candidates=5):
     return candidates[argmin]
 
 
-def optimize(n_iter):
-    print(crayons.cyan("Obtaining initial samples", bold=True))
-    x_init = pick_initial(30)
-    y = []
-    for x in tqdm(x_init, ncols=80, leave=False):
-        y.append(train(x).to(torch.double))
+def from_space(model):
+    y = lower_confidence_bound(space, model)
+    i = torch.min(y, dim=0)[1].item()
+    return space[i]
 
-    y = torch.stack(y).cpu()
+
+def optimize(n_iter, init_id=None):
+    print(crayons.cyan("Obtaining initial samples", bold=True))
+    if not init_id:
+        x_init = pick_initial(20)
+        y = []
+        for x in tqdm(x_init, ncols=80, leave=False):
+            y.append(train(x).to(torch.double))
+
+        y = torch.stack(y).cpu()
+    else:
+        files = Path('./out').glob(f'model_{init_id}*.pt')
+        x_init = []
+        y = []
+        for f in files:
+            model, params = load(f)
+            model.to(device)
+            y_ = test(model, params)
+            x_init.append(torch.tensor([v for k, v in params.items()],
+                                       dtype=torch.double))
+            y.append(y_.to(torch.double))
+        x_init = torch.stack(x_init).cpu()
+        y = torch.stack(y).cpu()
+
+    x_init = x_init[np.logical_not(torch.isnan(y))]
+    y = y[np.logical_not(torch.isnan(y))]
 
     gpmodel = gp.models.GPRegression(
         x_init, y,
@@ -156,36 +198,28 @@ def optimize(n_iter):
     ).to(torch.double)
     print(crayons.cyan("Finding optimal parameters", bold=True))
     for i in range(n_iter):
-        xmin = next_x(gpmodel)
-        y = update_posterior(xmin, gpmodel)
+        # xmin = next_x(gpmodel)
+        xmin = from_space(gpmodel)
+        print(xmin)
+        y = update_posterior(xmin.reshape(1, -1), gpmodel)
 
     return xmin
 
 
-def train(params, max_epochs=10):
+def train(params, max_epochs=5):
     params = label_params(params.to(torch.float))
     # print(params)
 
     train_loader, test_loader = get_data_loaders(int(params['batch_size']),
-                                                 1000000)
+                                                 8000000)
 
-    n_clusters = int(params['n_clusters'])
-
-    if n_clusters > 1:
-        # Find clusters
-        k = MiniBatchKMeans(n_clusters=n_clusters, compute_labels=False,
-                            max_iter=10,
-                            max_no_improvement=100, random_state=1234)
-
-        k.fit(d.numpy().reshape(-1, 1))
-        clusters = torch.tensor(k.cluster_centers_.squeeze(),
-                                dtype=torch.float,
-                                device=device)
-
-    model = TaxiNet(dim_out=n_clusters, **params).to(device, torch.float)
+    model = TaxiNet(
+        dim_out=clusters.shape[0], **params
+    ).to(device, torch.float)
 
     optimizer = optim.SGD(
         model.parameters(), lr=params['lr'],
+        weight_decay=params['l2'],
         momentum=params['momentum']
     )
 
@@ -196,32 +230,40 @@ def train(params, max_epochs=10):
             optimizer.zero_grad()
             y_ = model(x)
 
-            if n_clusters > 1:
-                y_ = clusters @ y_.t()
+            y_ = clusters @ y_.t()
 
             loss = F.mse_loss(y, y_.squeeze())
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.2)
             optimizer.step()
 
-    with torch.no_grad():
-        mse = 0
-        for x, y in test_loader:
-            x, y = x.to(device, torch.float), y.to(device, torch.float)
-            y_ = model(x)
-
-            if n_clusters > 1:
-                y_ = clusters @ y_.t()
-
-            mse += torch.sum((y - y_)**2)
-
-        rmse = torch.sqrt(mse/len(test_loader.dataset))
+    rmse = test(model, params, test_loader)
 
     model.cpu()
     save(model, params, f'out/model_{runid}_rmse{rmse:03.2f}.pt')
     model.to(device)
-    print(crayons.red(f"RMSE: {rmse}"))
 
+    return rmse
+
+
+@torch.no_grad()
+def test(model, params, test_loader=None):
+    # params = label_params(params.to(torch.float))
+
+    if test_loader is None:
+        _, test_loader = get_data_loaders(int(params['batch_size']),
+                                          8000000)
+    mse = 0
+    for x, y in test_loader:
+        x, y = x.to(device, torch.float), y.to(device, torch.float)
+        y_ = model(x)
+
+        y_ = clusters @ y_.t()
+
+        mse += torch.sum((y - y_)**2)
+
+    rmse = torch.sqrt(mse/len(test_loader.dataset))
+    print(crayons.green(f"RMSE: {rmse}"))
     return rmse
 
 
@@ -233,8 +275,34 @@ def load(file):
     return torch.load(file)
 
 
+def submission(file):
+    model, _ = load(file)
+    model.to(device)
+
+    d = pd.read_csv('../data/test.csv')
+
+    d['pickup_datetime'] = d['pickup_datetime'].str.slice(0, 16)
+    d['pickup_datetime'] = pd.to_datetime(d['pickup_datetime'], utc=True, format='%Y-%m-%d %H:%M')
+    d['year'] = d['pickup_datetime'].map(lambda x: x.year) - 2009
+    d['month'] = d['pickup_datetime'].map(lambda x: x.month) - 1
+    d['weekday'] = d['pickup_datetime'].map(lambda x: x.weekday())
+    d['quaterhour'] = d['pickup_datetime'].map(lambda x: x.hour*4 + x.minute//15)
+    d.drop('pickup_datetime', 1, inplace=True)
+
+    mean = np.array([-73.97082, 40.750137, -73.97059, 40.750237])
+    std = np.array([0.039113935, 0.030007664, 0.03834897, 0.033217724])
+    d.iloc[:, 1:5] = (d.iloc[:, 1:5] - mean) / std
+    d['passenger_count'] -= 1
+
+    x = torch.tensor(d.iloc[:, 1:].values, dtype=torch.float, device=device)
+    z_ = model(x)
+    z = clusters @ z_.t()
+    out = pd.DataFrame({'key': d['key'].values, 'fare_amount': z.data.cpu().numpy()})
+    out.to_csv('./submission.csv', index=False)
+
+
 if __name__ == "__main__":
     outpath = Path('./out')
     outpath.mkdir(exist_ok=True)
 
-    label_params(optimize(50))
+    fire.Fire()

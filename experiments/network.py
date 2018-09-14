@@ -6,11 +6,11 @@ class TaxiFeatureCreator(nn.Module):
     def __init__(self):
         super(TaxiFeatureCreator, self).__init__()
         self.embeddings = nn.ModuleList([
-            nn.Embedding(6, 3),    # Passenger count - 1
-            nn.Embedding(7, 4),    # Year - 2009
-            nn.Embedding(12, 6),   # Month
-            nn.Embedding(7, 4),    # Weekday
-            nn.Embedding(96, 50)    # Quaterhour
+            nn.Embedding(6, 10),    # Passenger count - 1
+            nn.Embedding(7, 10),    # Year - 2009
+            nn.Embedding(12, 10),   # Month
+            nn.Embedding(7, 10),    # Weekday
+            nn.Embedding(96, 10)    # Quaterhour
         ])
 
     def forward(self, x, y):
@@ -22,31 +22,27 @@ class TaxiFeatureCreator(nn.Module):
 
 
 class TaxiNet(nn.Module):
-    def __init__(self, dim_hidden, n_layers, p_drop, dim_out=1,
-                 **kwargs):
+    def __init__(self, p_drop, dim_out=1, **kwargs):
         super(TaxiNet, self).__init__()
 
-        dim_in = 71
-        dim_hidden = int(dim_hidden)
-        n_layers = int(n_layers)
+        dim_in = 54
         self.feature_creator = TaxiFeatureCreator()
 
         self.layers = nn.ModuleList([
-            nn.Linear(dim_in, dim_hidden),
+            nn.Linear(dim_in, 1024),
             nn.ReLU(),
-            nn.BatchNorm1d(dim_hidden),
-            nn.Dropout(p_drop)
+            nn.BatchNorm1d(1024),
+            nn.Dropout(p_drop),
+            nn.Linear(1024, 256),
+            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.Dropout(p_drop),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.BatchNorm1d(64),
+            nn.Dropout(p_drop),
+            nn.Linear(64, dim_out)
         ])
-
-        for i in range(n_layers-1):
-            self.layers.extend([
-                nn.Linear(dim_hidden, dim_hidden),
-                nn.ReLU(),
-                nn.BatchNorm1d(dim_hidden),
-                nn.Dropout(p_drop)
-            ])
-
-        self.layers.append(nn.Linear(dim_hidden, dim_out))
 
         if dim_out > 1:
             self.layers.append(nn.Softmax(dim=1))

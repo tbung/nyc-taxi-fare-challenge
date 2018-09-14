@@ -1,0 +1,29 @@
+\section{Methods}%
+\label{sec:methods}
+
+\subsection{Entity Embeddings}%
+\label{sub:entity_embeddings}
+
+We map categorical variables with $C$ categories represented by indices $c \in
+[0,C)$ to real-numbered vectors $\vec{x}_c \in \R^n$
+\begin{equation}
+    \Embed: [0,C) \rightarrow \R^n, c \mapsto \Embed(c) = \vec{x}_c.
+\end{equation}
+These embedding layers are implemented as lookup tables. The vector associated
+with each index is a parameter of the model and is learnd jointly with the rest
+of the model.
+
+If the input to our model is a mixture of continuous and categorical variables
+as is the case here, we learn one embedding layer for each of the categorical
+variables and concatenate the vector components of each embedding output
+together with the continuous variables to one vector. This concatenated vector
+then serves as the input to the rest of the model.
+
+\subsection{Deep Neural Networks}%
+\label{sub:deep_neural_networks}
+
+\subsection{Tree-based methods}%
+\label{sub:tree_based_methods}
+
+\subsection{Bayesian Optimization}%
+\label{sub:bayesian_optimization}

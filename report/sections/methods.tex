@@ -5,9 +5,9 @@
 \label{sub:entity_embeddings}
 
 We map categorical variables with $C$ categories represented by indices $c \in
-[0,C)$ to real-numbered vectors $\vec{x}_c \in \R^n$
+\{ 0,1,\dots,C-1\}$ to real-numbered vectors $\vec{x}_c \in \R^n$
 \begin{equation}
-    \Embed: [0,C) \rightarrow \R^n, c \mapsto \Embed(c) = \vec{x}_c.
+    \Embed: \{0,1,\dots,C-1\} \rightarrow \R^n, c \mapsto \Embed(c) = \vec{x}_c.
 \end{equation}
 These embedding layers are implemented as lookup tables. The vector associated
 with each index is a parameter of the model and is learnd jointly with the rest
@@ -19,11 +19,82 @@ variables and concatenate the vector components of each embedding output
 together with the continuous variables to one vector. This concatenated vector
 then serves as the input to the rest of the model.
 
-\subsection{Deep Neural Networks}%
-\label{sub:deep_neural_networks}
+\subsection{Neural Networks}%
+\label{sub:neural_networks}
+
+\begin{figure}[htb!]
+    \def\layersep{2.5cm}
+    \centering
+    \begin{tikzpicture}[shorten >=1pt,->,draw=black!50, node distance=\layersep]
+        \tikzstyle{every pin edge}=[<-,shorten <=1pt]
+        \tikzstyle{neuron}=[circle,fill=black!25,minimum size=17pt,inner sep=0pt]
+        \tikzstyle{input neuron}=[neuron, fill=green!50];
+        \tikzstyle{output neuron}=[neuron, fill=red!50];
+        \tikzstyle{hidden neuron}=[neuron, fill=blue!50];
+        \tikzstyle{annot} = [text width=4em, text centered]
+
+        % Draw the input layer nodes
+        \foreach \name / \y in {1,...,4}
+        % This is the same as writing \foreach \name / \y in {1/1,2/2,3/3,4/4}
+        \node[input neuron, pin=left:Input \#\y] (I-\name) at (0,-\y) {};
+
+        % Draw the hidden layer nodes
+        \foreach \name / \y in {1,...,5}
+        \path[yshift=0.5cm]
+            node[hidden neuron] (H-\name) at (\layersep,-\y cm) {};
+
+        % Draw the output layer node
+        \node[output neuron,pin={[pin edge={->}]right:Output}, right of=H-3] (O) {};
+
+        % Connect every node in the input layer with every node in the
+        % hidden layer.
+        \foreach \source in {1,...,4}
+        \foreach \dest in {1,...,5}
+        \path (I-\source) edge (H-\dest);
+
+        % Connect every node in the hidden layer with the output layer
+        \foreach \source in {1,...,5}
+        \path (H-\source) edge (O);
+
+        % Annotate the layers
+        \node[annot,above of=H-1, node distance=1cm] (hl) {Hidden layer};
+        \node[annot,left of=hl] {Input layer};
+        \node[annot,right of=hl] {Output layer};
+    \end{tikzpicture}
+    \caption{2-Layer neural network}
+    \label{fig:neural_network}
+\end{figure}
+
+Feed-forward neural networks, sometimes called multilayer perceptrons, are one
+of many machine learning models designed to approximate some function $f^*$.
+They define a mapping $y=f(x,\theta)$ where $\theta$ is learned to result in
+the best approximation.
+
+The name feed-forward neural network stems from the
+fact that they consist of intermediary functions called layers, that are
+chained together. The length of the chain of these intermediary functions gives
+the depth of the network. As $f^*$, $f$ and all intermediary functions are
+vertor valued, the dimensionality of the vector gives the width of the layer.
+If a layer is not the input or output layer it is called hidden.
+By depicting each vector component as a node, neural networks can be described
+by directed acyclic graphs as in \autoref{fig:neural_network}~\cite{Goodfellow-et-al-2016}.
+
+In most cases, each layer consists of a linear function $y=w^T x$, where $w$
+are called the weights of that layer and are part of $\theta$. As a chain of
+linear functions is still a linear function, we need something to make the
+neural network nonlinear to learn general functions. To acomplish this, each
+layer is associated with a nonlinear function called the activation function,
+that is applied to the result of the linear function. Popular choices for
+activation functions are the rectified linear unit (ReLU)
+\begin{equation}
+    \ReLU(x)=\max(0, x)
+\end{equation}
+and the softmax~\cite{Goodfellow-et-al-2016}. %TODO
+
+\subsection{Gaussian Processes}%
+\label{sub:gaussian_processes}
+
+Gaussian processes are nonparametric~\cite{barberBRML2012}.
 
 \subsection{Tree-based methods}%
 \label{sub:tree_based_methods}
-
-\subsection{Bayesian Optimization}%
-\label{sub:bayesian_optimization}

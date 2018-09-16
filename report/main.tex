@@ -24,6 +24,13 @@
 \usepackage{url}
 % \usepackage[bottom]{footmisc}
 
+\definecolor{burgundy}{rgb}{0.5, 0.0, 0.13}
+\definecolor{applegreen}{rgb}{0.55, 0.71, 0.0}
+\definecolor{lemon}{rgb}{1.0, 0.97, 0.0}
+\definecolor{navyblue}{rgb}{0.0, 0.0, 0.5}
+
+\DeclareMathOperator{\BN}{\textit{BN}}
+\DeclareMathOperator{\ReLU}{\textit{ReLU}}
 \DeclareMathOperator{\R}{\mathbb{R}}
 \DeclareMathOperator{\Embed}{\text{\textit{Embedding}}}
 \let\vec\mathbf
@@ -48,12 +55,7 @@
 
 \input{./sections/methods.tex}
 
-\section{Experiments}%
-\label{sec:experiments}
-
-\subsection{Data Set}%
-\label{sub:dataset}
-
+\input{./sections/experiments.tex}
 
 \section{Conclusion}%
 \label{sec:conclusion}

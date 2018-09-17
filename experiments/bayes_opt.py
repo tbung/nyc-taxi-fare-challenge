@@ -108,11 +108,13 @@ def upper_confidence_bound(x, model, kappa=2):
 
 
 def update_posterior(params, model):
+    global space
     y_ = train(params).to('cpu', torch.double)
     X = torch.cat([model.X.data, params.data], dim=0)
     y = torch.cat([model.y.data, y_.data.reshape(-1)], dim=0)
     model.set_data(X, y)
     model.optimize()
+    space = space[torch.sum(space != params, dim=1).nonzero()].reshape(-1, space.shape[1])
     return y_
 
 
@@ -166,6 +168,7 @@ def from_space(model):
 
 
 def optimize(n_iter, init_id=None):
+    global space
     print(crayons.cyan("Obtaining initial samples", bold=True))
     if not init_id:
         x_init = pick_initial(20)
@@ -187,6 +190,9 @@ def optimize(n_iter, init_id=None):
             y.append(y_.to(torch.double))
         x_init = torch.stack(x_init).cpu()
         y = torch.stack(y).cpu()
+
+    for x in x_init:
+        space = space[torch.sum(space != x, dim=1).nonzero()].reshape(-1, space.shape[1])
 
     x_init = x_init[np.logical_not(torch.isnan(y))]
     y = y[np.logical_not(torch.isnan(y))]

@@ -1,0 +1,21 @@
+\section{Introduction}%
+\label{sec:introduction}
+
+Deep neural networks have become the de facto standard tool in many computer
+vision tasks, but other methods prevail for different tasks. The most popular
+and succesful method for regression on tabular data, at least on Kaggle, is
+gradient boosting decision trees~\cite{guo2016entity}.
+
+In this report we look at different and less popular approaches to large scale
+regression. We try to estimate a function mapping taxi ride parameters to the
+corresponding price for $55M$ records.
+
+We will first investigate neural networks, using entity embeddings for the
+categorical inputs as is common practice in neural language processing and has
+been applied to a similar problem to ours by De Br{\'e}bisson et
+al.~\cite{de2015artificial}.
+
+We will then move on to investigate a more uncommon method and try different
+methods of applying Gaussian processes to the problem.
+
+Finally we compare all our methods to gradient boosting decision trees.

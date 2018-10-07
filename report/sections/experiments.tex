@@ -1,23 +1,226 @@
 \section{Experiments}%
 \label{sec:experiments}
 
+The experiments are implemented in python using the popular PyTorch
+framework~\footnote{\url{https://pytorch.org/}} and the probabilistic
+programing language Pyro~\footnote{\url{http://pyro.ai/}}. Code for our
+experiments can be found on
+GitHub~\footnote{\url{https://github.com/tbung/nyc-taxi-fare-challenge}}.
+
 \subsection{Data Set}%
 \label{sub:dataset}
+
+The dataset consists of roughly $55M$ rows. We are given date and time of the
+taxi ride, GPS coordinates of start and end point and passenger count. The goal
+is to learn the price in dollars of each of those rides. An exerpt from the
+dataset can be seen in~\autoref{tab:dataset}.
+
+The first step to approach this challenge is analyzing the dataset. For that we
+first look at the distribution of the location data as shown
+in~\autoref{fig:map}. We find that the distributions are centered around New
+York, but reach very far. We also find nonsensical points in the water,
+unreachable by taxi, but choose to leave them in. We constrain the dataset to
+only the red boxed area, corresponding to the area in which the test set lies.
+
+Next we take a look at the fare amount. A histogram and Gaussian kernel density
+estimate are given in~\autoref{fig:fare_amount_prior}. As we can see there is
+one large spike and several smaller one. Other contestants on kaggle identified
+thos smaller spikes as corresponding do fixed price fares to airports and took
+distance to airport as an additional feature. We choose to ignore this and do
+no feature engineering. However we purge \verb|NaN| entries and entries greater
+than 250\$. Lastly we purge all entries with more than 6 passengers and
+normalize all our data.
+
+We follow the approach of De Br{\'e}bisson et al.~\cite{de2015artificial} and
+treat time data as categorical, divided in the subcategories year, month, day
+of the week and quaterhour of the day.
+
+Because of time constraints we limit the dataset to $8M$ randomly selected
+entries and split it in 90\% training and 10\% test data. Kaggle provides a
+validation set of about $10K$ entries.
+
+\begin{table}[h]
+\caption{Excerpt from the dataset}
+\begin{adjustbox}{width=\textwidth}
+\begin{tabular}{lrlrrrrr}
+\toprule
+{} &  fare\_amount &           pickup\_datetime &  pickup\_longitude &  pickup\_latitude &  dropoff\_longitude &  dropoff\_latitude &  passenger\_count \\
+\midrule
+0 &          4.5 & 2009-06-15 17:26:00 &        -73.844315 &        40.721317 &         -73.841614 &         40.712276 &                1 \\
+1 &         16.9 & 2010-01-05 16:52:00 &        -74.016045 &        40.711304 &         -73.979271 &         40.782005 &                1 \\
+2 &          5.7 & 2011-08-18 00:35:00 &        -73.982735 &        40.761269 &         -73.991241 &         40.750561 &                2 \\
+3 &          7.7 & 2012-04-21 04:30:00 &        -73.987129 &        40.733143 &         -73.991570 &         40.758091 &                1 \\
+4 &          5.3 & 2010-03-09 07:51:00 &        -73.968094 &        40.768009 &         -73.956657 &         40.783764 &                1 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\label{tab:dataset}
+\end{table}
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=1\textwidth]{../fare_amount_prior.pdf}
+    \caption{Distribution of fare amounts and Kernel Density Estimate. One can
+    see an initial spike well estimated by a Gaussian distribution and few
+smaller spikes, most likely pertaining to fixed-price rides, e.g. to airports.}
+    \label{fig:fare_amount_prior}
+\end{figure}
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=1\textwidth]{../locations.pdf}
+    \caption{Distribution of the given location data in degrees. The area to
+    which we constrain the data is displayed as a red rectangle. \textbf{Left:}
+Taxi ride pickup locations \textbf{Right:} Taxi ride dropoff locations}
+    \label{fig:map}
+\end{figure}
 
 \subsection{Model Setups}%
 \label{sub:model_setups}
 
-\subsubsection{Simple Neural Network}%
-\label{ssub:simple_neural_network}
-
-\subsubsection{Deep Neural Network}%
+\subsubsection{Deep Feed-Forward Network}%
 \label{ssub:deep_neural_network}
+
+We construct a fully-connected network consisting of three layers with 1024,
+256 and 64 outputs with rectified linear units as activation functions and
+batch normalization applied after each layer. A final linear layer maps to the
+output space.
+
+Following De Br{\'e}bisson et al.~\cite{de2015artificial}, we apply embeddings
+to each categorical component in the inputs and learn the embedding vectors
+jointly with the network weights. The number of embedding dimensions for each
+variable can be found in~\autoref{tab:embed_dim}.
+
+\begin{table}[htb!]
+    \centering
+    \caption{Dimension of embedding vectors}
+    \label{tab:embed_dim}
+    \begin{tabular}{lrr}
+        \toprule
+        Variable & Number of Categories & Number of Dimensions \\
+        \midrule
+        Passenger Count &  6 &  3 \\
+        Year            &  7 &  4 \\
+        Month           & 12 &  6 \\
+        Weekday         &  7 &  4 \\
+        Quaterhour      & 96 & 50 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Furthermore, again inspired by De Br{\'e}bisson et al.~\cite{de2015artificial},
+we apply K-means clustering to the targets in the data set and use the clusters
+to place a prior on our outputs. We do this by letting the network output a
+score for each cluster, applying a softmax function to place the scores in the
+$(0,1)$ range. We then sum over all cluster centers weighted by the network
+scores to obtain the final output. The full process can be described
+by~\autoref{algo:taxi_net}
+\begin{algorithm}
+    \caption{Fully-connected Deep Neural Network architecture, inspired
+    by~\cite{de2015artificial}}
+    \label{algo:taxi_net}
+    \begin{algorithmic}[1]
+        \Function{TaxiNet}{($x_{\text{categorical}}, x_{\text{continuous}}$)}
+        \State $e \gets \Embed (x_{\text{categorical}})$
+        \State $x \gets (e, x_{\text{continuous}})$
+        \State $y \gets \BN (\ReLU (w_{N \times 1024}^T \cdot x + b_{1024}))$
+        \State $y \gets \BN (\ReLU (w_{1024 \times 256}^T \cdot y + b_{256}))$
+        \State $y \gets \BN (\ReLU (w_{256 \times 64}^T \cdot y + b_{64}))$
+        \State $y \gets \SoftMax ( w_{64 \times D}^T \cdot y + b_{64})$
+        \State $z \gets \sum_{i=0}^D c_i y_i$
+        \State \textbf{return} z
+        \EndFunction
+    \end{algorithmic}
+\end{algorithm}
+where $N$ is the sum of the embedding dimensions and number of continuous
+values, $D$ is the number of outputs (either the number of clusters, or 1) and
+$w_{n \times m}$ and $b_{m}$ are $n\times m$-dimensional weight matrix and
+$m$-dimensional bias vector of the respective layer. $\BN$ denotes batch
+normalization, $\ReLU$ the rectified linear unit and $\SoftMax$ the softmax
+function. The cluster centers are denoted by $c_i$.
+
 
 \subsubsection{Gaussian Processes}%
 \label{ssub:gaussian_processes}
 
+We investigate two different Gaussian process approaches: deep kernel learning
+and deep gaussian processes. Both are learned using stochastic variational
+inference as described above.
+
+In the deep kernel learning, the kernel function is prepended by a neural
+network, whos weights are learnt jointly with the inducing
+points\cite{wilson2016stochastic}. For the kernel we choose the above mentioned
+radial basis function and use the same network as in the experiments above, but
+with two outputs and without computing cluster scores.
+
+In deep Gaussian processes (DGP) we simply chain multiple Gaussian processes so that
+the input of one Gaussian process is the output of another Gaussian process.
+Here we investigate a 5-layer DGP using radial basis functions as the kernels.
+
 \subsubsection{Gradient Boosting}%
 \label{ssub:gradient_boosting}
 
+For our gradient boosting experiments we use
+LightGBM~\footnote{\url{https://github.com/Microsoft/LightGBM}}. Please refer
+to our code for the exact setup, which is inspired by a kaggle kernel by user
+Sylas~\footnote{\url{https://www.kaggle.com/jsylas/python-version-of-top-ten-rank-r-22-m-2-88}}.
+
 \subsection{Results}%
 \label{sub:results}
+
+\begin{table}[htb!]
+    \centering
+    \caption{Obtained accuracy for each approach}
+    \label{tab:results}
+    \begin{tabular}{lrr}
+        \toprule
+        Approach & Validation Accuracy & Test Accuracy \\
+        \midrule
+        Deep Neural Network with Embeddings && \\
+        \ \ and Clusters & 3.65 & \textbf{3.08} \\
+        DGP & 6.34 & 5.98 \\
+        Deep Kernel GP & 3.66 & 3.29 \\
+        Gradient Boosting & 3.72 & 3.20 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The results can be seen in~\autoref{tab:results}. As we can see the neural
+network with embeddings and clusters performs best. Taking a look at the
+training curves in~\autoref{fig:train} we can see, that the loss for the neural
+network is very noisy and the test accuracy converes quickly. The deep kernel
+approach seems to converge similarly while the DGP approach seems to converge
+much more slowly.
+
+\begin{figure}[tb]
+    \centering
+    \begin{subfigure}[c]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{../run_network_Sep19_23-35-50-tag-train_loss.pdf}
+        \caption{Train loss for the neural network approach}
+    \end{subfigure}
+    \begin{subfigure}[c]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{../run_network_Sep19_23-35-50-tag-test_acc.pdf}
+        \caption{Test accuracy for the neural network approach}
+    \end{subfigure}
+
+    \begin{subfigure}[c]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{../run_svdkgp_Oct04_15-33-16-tag-train_loss.pdf}
+        \caption{Train loss for the deep kernel learning}
+    \end{subfigure}
+    \begin{subfigure}[c]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{../run_svdkgp_Oct04_15-33-16-tag-test_acc.pdf}
+        \caption{Test accuracy for the deep kernel learning}
+    \end{subfigure}
+
+    \begin{subfigure}[c]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{../run_dgp_Oct04_18-03-13-tag-train_loss.pdf}
+        \caption{Train accuracy for the DGP}
+    \end{subfigure}
+    \begin{subfigure}[c]{0.49\textwidth}
+        \includegraphics[width=\linewidth]{../run_dgp_Oct04_18-03-13-tag-test_acc.pdf}
+        \caption{Test accuracy for the DGP}
+    \end{subfigure}
+    \caption{Training curves for all methods. Solid lines are smoothe by using
+    a running mean, transparent lines are the true data.}
+    \label{fig:train}
+\end{figure}

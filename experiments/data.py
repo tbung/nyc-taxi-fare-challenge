@@ -57,7 +57,7 @@ class NYCTaxiFareDataset(data.Dataset):
                 self.target[index])
 
     def __len__(self):
-        return self.target.size(0)
+        return self.target.shape[0]
 
     def cuda(self):
         print("Loading data onto GPU")

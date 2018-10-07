@@ -1,6 +1,6 @@
-\documentclass{article}
+\documentclass[12pt]{article}
 
-\usepackage{compact}
+% \usepackage{compact}
 % \usepackage[a4paper, width=150mm,top=25mm,bottom=25mm]{geometry}
 \usepackage[ngerman,english]{babel}
 \usepackage[utf8]{inputenc}
@@ -12,6 +12,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{algorithm}
+\usepackage{adjustbox}
 \usepackage{algpseudocode}
 \usepackage{listings}
 \usepackage{booktabs}
@@ -19,10 +20,12 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning,fit}
 \usepackage{biblatex}
+\usepackage[width=0.8\textwidth,labelformat=default]{subcaption}
 % \usepackage{fancyhdr}
 % \pagestyle{fancy}
 \usepackage{url}
 % \usepackage[bottom]{footmisc}
+\usepackage{bbold}
 
 \definecolor{burgundy}{rgb}{0.5, 0.0, 0.13}
 \definecolor{applegreen}{rgb}{0.55, 0.71, 0.0}
@@ -31,36 +34,43 @@
 
 \DeclareMathOperator{\BN}{\textit{BN}}
 \DeclareMathOperator{\ReLU}{\textit{ReLU}}
+\DeclareMathOperator{\KL}{\textit{KL}}
+\DeclareMathOperator{\SoftMax}{\textit{SoftMax}}
 \DeclareMathOperator{\R}{\mathbb{R}}
 \DeclareMathOperator{\Embed}{\text{\textit{Embedding}}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
 \let\vec\mathbf
 
 \bibliography{references}
 
-\title{New York Taxi Fare Challenge}
-\author{Till Bungert}
+\title{Comparison of Approaches to Large Scale Regression}
+\author{Till Bungert\\
+    \emph{Mat-Nr.: 3302154}\\
+\emph{\email{bungert@stud.uni-heidelberg.de}}}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
+    Gradient boosting descision trees are the most popular model for tabular
+    data regression on kaggle, however they require careful feature
+    engineering. We investigate the performance of different methods on such a
+    problem with zero feature engineering and find that neural networks perform
+    well for this task when paired with embeddings. We also investigate
+    differen Gaussian process based approaches, but find that they are harder
+    to train than neural networks.
 \end{abstract}
 
-\section{Introduction}%
-\label{sec:introduction}
+\onehalfspacing
 
-
-\section{Related Work}%
-\label{sec:related_work}
+\input{./sections/introduction.tex}
 
 \input{./sections/methods.tex}
 
 \input{./sections/experiments.tex}
 
-\section{Conclusion}%
-\label{sec:conclusion}
-    
-
+\clearpage
 \printbibliography
 
 \end{document}

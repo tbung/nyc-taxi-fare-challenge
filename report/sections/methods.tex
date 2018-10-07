@@ -94,14 +94,76 @@ and the softmax~\cite{Goodfellow-et-al-2016}. %TODO
 \subsection{Gaussian Processes}%
 \label{sub:gaussian_processes}
 
-Gaussian processes are nonparametric~\cite{barberBRML2012}.
+If we want to estimate some unobserved function $f = f(\vec{x})$ responsible
+for generating some set of observed variables $\mathbf{Y} \in \R^{N}$
+from a corresponding set of input variables $\mathbf{X} \in \R^{N \times D}$,
+Gaussian Processes can be used to obtain nonparametric prior distributions over
+the latent function $f$.
 
-\subsection{Tree-based methods}%
-\label{sub:tree_based_methods}
+Formally, each datapoint $y_n$ is generated from $f(\vec{x}_n)$ by adding
+Gaussian noise
+\begin{equation}
+y_n = f(\vec{x}_n) + \epsilon_n, \quad
+\epsilon_n \sim \mathcal{N}(0,\sigma_{\epsilon}^2\vec{I})
+\end{equation}
+and $f$ is drawn from a zero-mean Gaussian process
+\begin{equation}
+f \sim \mathcal{GP}(\vec{0},k(x,x'))
+\end{equation}
+defined by its covariance function $k$ operating on the inputs $\vec{X}$. To
+obtain a flexible model only very general assumptions are made when choosing
+the covariance function. The popular radial basis function $k(x, x')=\sigma^2
+\exp^{-\frac{(x-x')^2}{2l^2}}$ for instance only makes an assumption about the
+smoothness of $f$. We denote kernel function hyperparameters as
+$\vec{\theta}$.
+The marginal likelihood for a set of outputs given a set of inputs can now be analytically computed as~\cite{damianou2013deep}
+\begin{equation}
+    p(\vec{Y} | \vec{X}) = \mathcal{N}(\vec{Y}|\vec{0}, k(\vec{X}, \vec{X}) +
+    \sigma_{\epsilon}\mathbb{1}).
+\end{equation}
 
-As the most used approach for challenges such as the challenge considered in
-this report, is gradient boosting, we will use gradient boosting as a baseline
-with which to compare our other approaches. For this it is helpful to briefly
-reintroduce this method here.
+If want now to predict the output $y^*$ for some novel input $\vec{x}^*$, we have to
+condition the joint distribution of the outputs
+\begin{equation}
+    p(\vec{Y}, y^*|\vec{X}, \vec{x}^*) = \mathcal{N}(\vec{Y}, y^*|\vec{0},
+    \vec{K}^+), \quad \vec{K}^+ =
+    \begin{pmatrix}
+        \vec{K}_{\vec{X}\vec{X}} & \vec{K}_{\vec{X}\vec{x}^*} \\
+        \vec{K}_{\vec{x}^*\vec{X}} & \vec{K}_{\vec{x}^*\vec{x}^*} \\
+    \end{pmatrix}
+\end{equation}
+on the known outputs to obtain~\cite{barberBRML2012}
+\begin{equation}
+    p(y^* | \vec{x}^*, \vec{X}, \vec{Y}) = \mathcal{N}(y^* |\ \vec{K}_{\vec{x}^*\vec{X}}
+    \vec{K}_{\vec{X}\vec{X}}^{-1}\vec{Y},\ \vec{K}_{\vec{x}^*\vec{x}^*} -
+    \vec{K}_{\vec{x}^*\vec{X}} \vec{K}_{\vec{X}\vec{X}}^{-1} \vec{K}_{\vec{X}\vec{x}^*}).
+\end{equation}
+This computation, however, has complexity $\mathcal{O}(N^3)$.
 
-~\cite{hastie2009elements}.
+To be able to use Gaussian processes for large datasets we apply stochastic
+variational inference to the model. For this we introduce a set of inducing
+variables $\vec{U}$ that represent the values of $f$ at the points $\vec{Z} \in
+\R^{M \times D}$ living in $\vec{X}$ space, where $M<N$. Predictions then take
+the form
+\begin{equation}
+    p(y^* | \vec{x}^*, \vec{Z}, \vec{U}) = \mathcal{N}( y^* |
+    \vec{K}_{\vec{x}^*\vec{Z}} \vec{K}_{\vec{Z}\vec{Z}}^{-1}\vec{U},\
+    \vec{K}_{\vec{x}^*\vec{x^*}} - \vec{K}_{\vec{x}^*\vec{Z}}
+    \vec{K}_{\vec{Z}\vec{Z}}^{-1}\vec{K}_{\vec{Z}\vec{x}^*})
+\end{equation}
+
+We estimate the inducing points $\vec{Z}$ using stochastic variational
+interference by using a variational distribution $q(\vec{U}) = \mathcal{N}
+(\vec{U} | \vec{m}, \vec{S})$ to
+place a lower bound on $p(\vec{Y} | \vec{X})$:
+\begin{equation}
+    \log p(\vec{Y} | \vec{X}) \geq \sum_{i=1}^{N} \mathcal{L}_i -
+    \KL(q(\vec{U}) || p(\vec{U}))
+\end{equation}
+where $\mathcal{L}_i$ only depends on one input-output pair ${\vec{x}_i, y_i}$.
+The derivation and exact definition of $\mathcal{L}$ in out of scope for this
+report and not importantn. It can be found in~\cite{hensman2013gaussian}. The
+important property of this lower bound is that it is a sum of terms where each
+only corresponds to one input-output pair, allowing us to use stochastic
+gradient descent to train the model.
+

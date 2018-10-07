@@ -50,7 +50,7 @@ def train(params):
 
 
 def submission():
-    model = lgbm.Booster(model_file='./out/model_6765019.bst')
+    model = lgbm.Booster(model_file='./out/model_8655452.bst')
 
     d = pd.read_csv('../data/test.csv')
 

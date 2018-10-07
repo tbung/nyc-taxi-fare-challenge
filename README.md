@@ -9,5 +9,7 @@
 
 ## Requirements
 
-- [GPyTorch](https://cornellius-gp.github.io/)
 - [PyTorch](https://pytorch.org)
+- [Pyro](https://pyro.ai)
+- [fire](https://github.com/google/python-fire)
+- The scipy stack (numpy, pandas, matplotlib, scikit-learn,...)
